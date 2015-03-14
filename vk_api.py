@@ -96,7 +96,6 @@ def authorize(login, password):
     auth_obj = {'access_token': parse_obj['access_token'][0],
                 'expires_in': parse_obj['expires_in'][0],
                 'user_id': parse_obj['user_id'][0]}
-
     return auth_obj
 
 
@@ -113,6 +112,12 @@ class VkAPI:
         self.access_token = auth_obj['access_token']
         self.expires_in = auth_obj['expires_in']
         self.user_id = auth_obj['user_id']
+
+    def __getattr__(self, attr):
+        """Создаем объекты API динамически, например, VkAPI.users
+
+        """
+        return VkAPIObject(attr, self)
 
     def api_request(self, api_method, **params):
         """Метод для выполнения запроса к API.
@@ -139,12 +144,6 @@ class VkAPI:
         else:
             raise VkAPIException('Unknown error')
 
-    def __getattr__(self, attr):
-        """Создаем объекты API динамически, например, VkAPI.users
-
-        """
-        return VkAPIObject(attr, self)
-
 
 class VkAPIObject:
     """Динамически вычисляемы объект API.
@@ -158,7 +157,6 @@ class VkAPIObject:
         """Динамически создаем методы объекта API.
 
         """
-
         # Создаем метод объекта, например, VkAPI.users.get()
         def object_method(**kwargs):
             return self.parent.api_request(api_method='{0}.{1}'.format(self.name, attr), **kwargs)

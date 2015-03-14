@@ -1,25 +1,29 @@
 # -*- coding: utf-8 -*-
 
-"""
-Простое API для работы с Вконтакте.
-
+"""Простое API для работы с ВКонтакте на Python.
 """
 
 import urllib.parse
 from html.parser import HTMLParser
 import json
+
 import requests
 
 
+# Адреса для авторизации на базе протокола OAuth
 VK_OAUTH_URL = "https://oauth.vk.com/authorize"
 VK_OAUTH_REDIRECT_URI = "https://oauth.vk.com/blank.html"
 
+# Версия API ВКонтакте
+VK_API_VERSION = '5.29'
+
+# Базовый url для формирования запросов к API
 VK_BASE_API_METHOD_URL = "https://api.vk.com/method/"
 
 
 class VkAuthParser(HTMLParser):
-    """
-    Парсер для разбора страницы авторизации приложения.
+    """Парсер для разбора страницы авторизации приложения.
+
     После открытия формы авторизации, пользователю будет предложено ввести логин и пароль. Нужно распарсить форму
     и извлечь из нее параметры, которые мы будем передавать на сервер:
         <form method="post" action="https://login.vk.com/?act=login&soft=1&utf8=1">
@@ -32,9 +36,9 @@ class VkAuthParser(HTMLParser):
         вместе с 'email' и 'pass' в POST запросе (<form method="post"...>).
 
     """
+
     def __init__(self):
-        """
-        Инициализируем парсер.
+        """Инициализируем парсер.
 
         """
         HTMLParser.__init__(self)
@@ -42,11 +46,8 @@ class VkAuthParser(HTMLParser):
         self.auth_params = {}
 
     def handle_starttag(self, tag, attrs):
-        """
-        Переопределяем метод handle_starttag для поиска интересующей нас информации.
+        """Переопределяем метод handle_starttag для поиска интересующей нас информации.
 
-        :param tag:
-        :param attrs:
         """
         if tag == 'input':
             attrs_dict = dict(attrs)
@@ -59,8 +60,7 @@ class VkAuthParser(HTMLParser):
 
 
 def authorize(login, password):
-    """
-    Авторизует клиентское приложение для доступа к API ВКонтакте.
+    """Авторизует клиентское приложение для доступа к API ВКонтакте.
 
     :param login: Логин (email).
     :param password: Пароль.
@@ -76,15 +76,15 @@ def authorize(login, password):
                'response_type': 'token'}
     r = requests.get(VK_OAUTH_URL, params=payload)
 
-    # Парсим страницу и сохраняем нужные параметры для авторизации
-    parser = VkAuthParser()
-    parser.feed(r.text)
+    # Парсим страницу с помощью VkAuthParser и сохраняем нужные параметры для авторизации
+    auth_parser = VkAuthParser()
+    auth_parser.feed(r.text)
 
     # Подставляем логин и пароль
-    parser.auth_params.update({'email': login, 'pass': password})
+    auth_parser.auth_params.update({'email': login, 'pass': password})
 
     # Отправляем форму на сервер и получаем ответ
-    auth_response = requests.post(parser.url, data=parser.auth_params)
+    auth_response = requests.post(auth_parser.url, data=auth_parser.auth_params)
 
     # URL, на который перенаправляется клиент после успешной авторизации имеет вид:
     # https://oauth.vk.com/blank.html#access_token=<token>&expires_in=<exp_in>&user_id=<userid>
@@ -100,19 +100,74 @@ def authorize(login, password):
     return auth_obj
 
 
-def api_request(api_method, **params):
-    """
-    Метод для выполнения запроса к API.
+class VkAPI:
+    """Реализация API.
 
-    :param api_method: название метода из списка функций API (см. документацию API ВКонтакте)
-    :param params: параметры соответствующего метода API
-    :return: данные в формате JSON
     """
 
-    # Формируем URL метода
-    api_method_url = urllib.parse.urljoin(VK_BASE_API_METHOD_URL, api_method)
+    def __init__(self, login, password):
+        """Инициализируем API.
 
-    # Делаем запрос к API и возвращаем JSON-объект
-    r = requests.get(api_method_url, params=params)
-    json_response = json.loads(r.content.decode())
-    return json_response
+        """
+        auth_obj = authorize(login, password)
+        self.access_token = auth_obj['access_token']
+        self.expires_in = auth_obj['expires_in']
+        self.user_id = auth_obj['user_id']
+
+    def api_request(self, api_method, **params):
+        """Метод для выполнения запроса к API.
+
+        :param api_method: название метода из списка функций API (см. документацию API ВКонтакте)
+        :param params: параметры соответствующего метода API
+        :return: данные в формате JSON
+        """
+
+        # Добавляем общие для всех методов параметры
+        params['v'] = VK_API_VERSION
+        params['access_token'] = self.access_token
+
+        # Формируем URL метода
+        api_method_url = urllib.parse.urljoin(VK_BASE_API_METHOD_URL, api_method)
+
+        # Делаем запрос к API и возвращаем JSON-объект
+        r = requests.get(api_method_url, params=params)
+        json_response = json.loads(r.content.decode())
+        if 'response' in json_response:
+            return json_response['response']
+        elif 'error' in json_response:
+            raise VkAPIException(json_response['error']['error_msg'])
+        else:
+            raise VkAPIException('Unknown error')
+
+    def __getattr__(self, attr):
+        """Создаем объекты API динамически, например, VkAPI.users
+
+        """
+        return VkAPIObject(attr, self)
+
+
+class VkAPIObject:
+    """Динамически вычисляемы объект API.
+
+    """
+    def __init__(self, name, parent):
+        self.name = name
+        self.parent = parent
+
+    def __getattr__(self, attr):
+        """Динамически создаем методы объекта API.
+
+        """
+
+        # Создаем метод объекта, например, VkAPI.users.get()
+        def object_method(**kwargs):
+            return self.parent.api_request(api_method='{0}.{1}'.format(self.name, attr), **kwargs)
+
+        return object_method
+
+
+class VkAPIException(Exception):
+    """Общее исключение API.
+
+    """
+    pass

@@ -1,35 +1,26 @@
 # -*- coding: utf-8 -*-
 
-"""
-Загрузка аудиозаписей из ВК.
-
+"""Загрузка аудиозаписей из ВК.
 """
 
 import os
 import requests
 # import shutil
 
-import vk_api
+from vk_api import VkAPI
 from config import *
 
-VK_API_VERSION = '5.27'
 
-# Авторизуемся
-auth_obj = vk_api.authorize(VK_LOGIN, VK_PASSWORD)
-
-# Получаем список аудиозаписей пользователя
-json_response = vk_api.api_request('audio.get',
-                                   owner_id=auth_obj['user_id'],
-                                   access_token=auth_obj['access_token'],
-                                   count=0,
-                                   v=VK_API_VERSION)
+# Инициализируем API
+vk = VkAPI(VK_LOGIN, VK_PASSWORD)
+response = vk.audio.get(count=5)
 
 # Проверяем каталог для загрузки
 if not os.path.exists(DOWNLOADS_PATH):
     os.makedirs(DOWNLOADS_PATH)
 
 # Загружаем аудиозаписи
-for audio_item in json_response['response']['items']:
+for audio_item in response['items']:
 
     # Формируем имя файла
     filename = '{artist} - {title}.mp3'.format(**audio_item)

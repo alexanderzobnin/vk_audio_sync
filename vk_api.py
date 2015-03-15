@@ -135,8 +135,7 @@ class VkAPI:
         api_method_url = urllib.parse.urljoin(VK_BASE_API_METHOD_URL, api_method)
 
         # Делаем запрос к API и возвращаем JSON-объект
-        r = requests.get(api_method_url, params=params)
-        json_response = json.loads(r.content.decode())
+        json_response = requests.get(api_method_url, params=params).json()
         if 'response' in json_response:
             return json_response['response']
         elif 'error' in json_response:
